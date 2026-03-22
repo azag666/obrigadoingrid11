@@ -8,16 +8,12 @@
     <script>
         (function() {
             const urlParams = new URLSearchParams(window.location.search);
-            // Busca o parâmetro utm_data que vem do ManyChat
             let rawData = urlParams.get('utm_data') || urlParams.get('adname'); 
             
             if (rawData) {
-                // Limpa qualquer variação do "/start " que o Telegram injeta
                 rawData = rawData.replace('/start ', '').replace(/\/start\s+/g, '').replace(/%2Fstart%20/g, '').trim();
-                
                 const newUrl = new URL(window.location);
                 
-                // Se o dado tiver nossos separadores duplos (__), a gente fatia
                 if (rawData.includes('__')) {
                     const parts = rawData.split('__');
                     newUrl.searchParams.set('utm_campaign', parts[0] || 'organico');
@@ -25,14 +21,10 @@
                     newUrl.searchParams.set('utm_term', parts[2] || 'organico');
                     newUrl.searchParams.set('adname', parts[2] || 'organico');
                 } else {
-                    // Fallback de segurança se vier apenas o nome do anúncio
                     newUrl.searchParams.set('adname', rawData);
                 }
                 
-                // APAGA o utm_data original para a barra de endereços ficar limpa
                 newUrl.searchParams.delete('utm_data');
-                
-                // Substitui a URL na barra sem recarregar a página para a Utmify ler
                 window.history.replaceState({}, '', newUrl);
             }
         })();
@@ -68,29 +60,12 @@
     </script>
 
     <style>
-        body {
-            background-color: #f4f6f8;
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            -webkit-font-smoothing: antialiased;
-        }
-        .tg-input {
-            transition: all 0.2s ease;
-            border: 1.5px solid #e5e7eb;
-        }
-        .tg-input:focus {
-            border-color: #3390ec;
-            box-shadow: 0 0 0 3px rgba(51, 144, 236, 0.15);
-        }
-        .fade-in {
-            animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(16px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .file-upload-wrapper:hover {
-            background-color: rgba(51, 144, 236, 0.04);
-        }
+        body { background-color: #f4f6f8; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+        .tg-input { transition: all 0.2s ease; border: 1.5px solid #e5e7eb; }
+        .tg-input:focus { border-color: #3390ec; box-shadow: 0 0 0 3px rgba(51, 144, 236, 0.15); }
+        .fade-in { animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        .file-upload-wrapper:hover { background-color: rgba(51, 144, 236, 0.04); }
     </style>
 
     <script>
@@ -103,7 +78,6 @@
         s.parentNode.insertBefore(t,s)}(window, document,'script',
         'https://connect.facebook.net/en_US/fbevents.js');
         
-        // Agora ele pega o adname da URL já "desempacotada" pelo primeiro script
         const updatedParams = new URLSearchParams(window.location.search);
         const finalAdName = updatedParams.get('adname') || 'organico';
 
@@ -116,15 +90,11 @@
             const formContainer = document.getElementById('form-container');
             const successContainer = document.getElementById('success-container');
 
-            // 1º REDIRECIONAMENTO: Se já comprou antes
             if (localStorage.getItem('conversion_sent_tg') === 'true') {
                 formContainer.classList.add('hidden');
                 successContainer.classList.remove('hidden');
                 successContainer.classList.add('flex', 'fade-in');
-                
-                setTimeout(() => {
-                    window.location.href = 'https://t.me/+W2YdZx24kGk5MjYx';
-                }, 1500);
+                setTimeout(() => { window.location.href = 'https://t.me/+W2YdZx24kGk5MjYx'; }, 1500);
                 return;
             }
 
@@ -139,50 +109,84 @@
                 const email = document.getElementById('email').value;
                 const amount = parseFloat(document.getElementById('amount').value);
                 
-                fbq('init', '902473605014744', {
-                    em: email.toLowerCase().trim(),
-                    fn: name.split(' ')[0].toLowerCase().trim()
-                });
+                fbq('init', '902473605014744', { em: email.toLowerCase().trim(), fn: name.split(' ')[0].toLowerCase().trim() });
 
                 if (amount > 0) {
+                    // 1. Envia para o Facebook
                     const uniqueEventId = 'pur_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-                    
                     fbq('track', 'Purchase', {
-                        value: amount,
-                        currency: 'ARS',
-                        content_name: finalAdName, // Envia o adname perfeito para o Pixel
-                        content_category: 'Bot_Telegram'
+                        value: amount, currency: 'ARS', content_name: finalAdName, content_category: 'Bot_Telegram'
                     }, { eventID: uniqueEventId }); 
 
                     localStorage.setItem('conversion_sent_tg', 'true');
+
+                    // ==================================================
+                    // 2. ENVIO DA VENDA PARA UTMIFY VIA WEBHOOK (FETCH)
+                    // ==================================================
+                    try {
+                        const now = new Date();
+                        const formattedDate = now.toISOString().slice(0, 19).replace('T', ' '); // YYYY-MM-DD HH:MM:SS
+                        
+                        const utmifyPayload = {
+                            orderId: 'tg_' + Date.now(),
+                            platform: 'Bot_Telegram',
+                            paymentMethod: 'pix',
+                            status: 'paid',
+                            createdAt: formattedDate,
+                            customer: {
+                                name: name,
+                                email: email
+                            },
+                            products: [{
+                                id: 'vip_01',
+                                name: 'Acesso VIP',
+                                quantity: 1,
+                                priceInCents: Math.round(amount * 100) // Utmify exige o valor em centavos
+                            }],
+                            trackingParameters: {
+                                utm_campaign: updatedParams.get('utm_campaign') || null,
+                                utm_content: updatedParams.get('utm_content') || null,
+                                utm_term: updatedParams.get('utm_term') || null,
+                                adname: finalAdName
+                            },
+                            commission: {
+                                totalPriceInCents: Math.round(amount * 100)
+                            }
+                        };
+
+                        fetch('https://api.utmify.com.br/api-credentials/orders', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'x-api-token': 'NfMiQjhIK71O3ttENTGJAy5x4uRDWxzrK6cG'
+                            },
+                            body: JSON.stringify(utmifyPayload)
+                        });
+                    } catch (error) {
+                        console.error('Erro ao enviar Webhook:', error);
+                    }
+                    // ==================================================
                 }
 
-                // 2º REDIRECIONAMENTO: Após a confirmação
+                // Transição e redirecionamento final
                 setTimeout(() => {
                     formContainer.classList.add('hidden');
                     successContainer.classList.remove('hidden');
                     successContainer.classList.add('flex', 'fade-in');
 
-                    setTimeout(() => {
-                        window.location.href = 'https://t.me/+W2YdZx24kGk5MjYx';
-                    }, 2500);
-
+                    setTimeout(() => { window.location.href = 'https://t.me/+W2YdZx24kGk5MjYx'; }, 2500);
                 }, 1200);
             });
         });
     </script>
-    <noscript><img height="1" width="1" style="display:none"
-    src="https://www.facebook.com/tr?id=902473605014744&ev=PageView&noscript=1"
-    /></noscript>
+    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=902473605014744&ev=PageView&noscript=1"/></noscript>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 text-tg-text">
 
     <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col relative border border-gray-100">
-        
         <div class="h-2 bg-tg-blue w-full"></div>
 
         <div id="form-container" class="p-6 sm:p-8 fade-in">
-            
             <div class="flex flex-col items-center text-center mb-6">
                 <div class="w-16 h-16 bg-[#eaf3fc] rounded-full flex items-center justify-center mb-4 text-tg-blue">
                     <i class="ph-fill ph-lock-key text-3xl"></i>
@@ -194,28 +198,21 @@
             </div>
 
             <form id="payment-form" class="space-y-5">
-                
                 <div>
                     <label for="name" class="block text-sm font-semibold text-gray-700 mb-1.5">Nombre completo</label>
-                    <input type="text" id="name" required placeholder="Ej: Juan Pérez" 
-                           class="w-full px-4 py-3 bg-gray-50 rounded-xl tg-input outline-none text-[15px] text-gray-800 placeholder-gray-400">
+                    <input type="text" id="name" required placeholder="Ej: Juan Pérez" class="w-full px-4 py-3 bg-gray-50 rounded-xl tg-input outline-none text-[15px] text-gray-800 placeholder-gray-400">
                 </div>
-
                 <div>
                     <label for="email" class="block text-sm font-semibold text-gray-700 mb-1.5">Correo electrónico</label>
-                    <input type="email" id="email" required placeholder="tu@email.com" 
-                           class="w-full px-4 py-3 bg-gray-50 rounded-xl tg-input outline-none text-[15px] text-gray-800 placeholder-gray-400">
+                    <input type="email" id="email" required placeholder="tu@email.com" class="w-full px-4 py-3 bg-gray-50 rounded-xl tg-input outline-none text-[15px] text-gray-800 placeholder-gray-400">
                 </div>
-
                 <div>
                     <label for="amount" class="block text-sm font-semibold text-gray-700 mb-1.5">Monto abonado (ARS)</label>
                     <div class="relative">
                         <span class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">$</span>
-                        <input type="number" id="amount" required min="1" step="0.01" placeholder="0.00" 
-                               class="w-full pl-9 pr-4 py-3 bg-gray-50 rounded-xl tg-input outline-none text-[15px] text-gray-800 placeholder-gray-400">
+                        <input type="number" id="amount" required min="1" step="0.01" placeholder="0.00" class="w-full pl-9 pr-4 py-3 bg-gray-50 rounded-xl tg-input outline-none text-[15px] text-gray-800 placeholder-gray-400">
                     </div>
                 </div>
-
                 <div class="pt-1">
                     <label class="block text-sm font-semibold text-gray-700 mb-1.5">Comprobante de transferencia</label>
                     <label for="receipt" class="file-upload-wrapper cursor-pointer flex items-center justify-center gap-2 w-full border-2 border-dashed border-gray-300 rounded-xl p-4 transition-colors text-tg-blue font-medium text-[15px]">
@@ -224,7 +221,6 @@
                     </label>
                     <input type="file" id="receipt" accept="image/*,.pdf" class="hidden">
                 </div>
-
                 <button type="submit" id="submit-btn" class="w-full mt-2 bg-tg-blue hover:bg-tg-hover text-white font-semibold py-3.5 px-4 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-sm text-[16px]">
                     Confirmar y liberar contenido
                 </button>
@@ -253,7 +249,6 @@
                 Ir al bot ahora
             </a>
         </div>
-
     </div>
 
     <script>
